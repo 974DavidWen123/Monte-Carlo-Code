@@ -1,0 +1,102 @@
+import yfinance as yf
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+from matplotlib.ticker import FuncFormatter
+
+ASSETS = ['JPM', 'MSFT', 'GOOG', 'NVDA', 'BAC', 'AAPL']
+START_DATE = '2020-01-01'
+END_DATE = '2023-01-01'
+MARKET_REPRESENTATION = 'SPY'
+NUM_PORTFOLIOS = 100_000
+RISK_FREE_RATE = 0
+
+# Data Collection for Assets
+data = yf.download(ASSETS, start=START_DATE, end=END_DATE)['Adj Close']
+market_data = yf.download(MARKET_REPRESENTATION, start=START_DATE, end=END_DATE)['Adj Close']
+daily_returns = data.pct_change().dropna()
+cov_matrix = daily_returns.cov()
+market_daily_returns = market_data.pct_change().dropna()
+market_return = market_daily_returns.mean() * 252
+market_volatility = market_daily_returns.std() * np.sqrt(252)
+market_sharpe_ratio = (market_return - RISK_FREE_RATE) / market_volatility
+
+# Monte Carlo Simulation
+results = np.zeros((4, NUM_PORTFOLIOS))
+weights_record = np.zeros((len(ASSETS), NUM_PORTFOLIOS))
+
+for i in range(NUM_PORTFOLIOS):
+    weights = np.random.random(len(ASSETS))
+    weights /= np.sum(weights)
+    weights_record[:, i] = weights
+    portfolio_return = np.sum(weights * daily_returns.mean()) * 252
+    portfolio_stddev = np.sqrt(np.dot(weights.T, np.dot(cov_matrix, weights))) * np.sqrt(252)
+    sharpe_ratio = (portfolio_return - RISK_FREE_RATE) / portfolio_stddev
+    results[0, i] = portfolio_return
+    results[1, i] = portfolio_stddev
+    results[2, i] = sharpe_ratio
+    results[3, i] = i
+
+columns = ['Return', 'Volatility', 'Sharpe Ratio', 'Simulation']
+simulated_portfolios = pd.DataFrame(results.T, columns=columns)
+optimal_idx = simulated_portfolios['Sharpe Ratio'].idxmax()
+optimal_portfolio = simulated_portfolios.loc[optimal_idx]
+optimal_weights = weights_record[:, optimal_idx]
+
+high_risk_idx = simulated_portfolios['Volatility'].idxmax()
+high_risk_portfolio = simulated_portfolios.loc[high_risk_idx]
+high_risk_weights = weights_record[:, high_risk_idx]
+
+low_risk_idx = simulated_portfolios['Volatility'].idxmin()
+low_risk_portfolio = simulated_portfolios.loc[low_risk_idx]
+low_risk_weights = weights_record[:, low_risk_idx]
+
+# Visualization: Efficient Frontier
+plt.figure(figsize=(12, 8))
+plt.gca().xaxis.set_major_formatter(FuncFormatter(lambda x, _: '{:.1f}%'.format(x * 100)))
+plt.gca().yaxis.set_major_formatter(FuncFormatter(lambda y, _: '{:.1f}%'.format(y * 100)))
+plt.scatter(simulated_portfolios['Volatility'], simulated_portfolios['Return'], c=simulated_portfolios['Sharpe Ratio'], cmap='YlGnBu')
+plt.colorbar(label='Sharpe Ratio')
+plt.xlabel('Volatility')
+plt.ylabel('Return')
+plt.title('Efficient Frontier')
+plt.scatter(market_volatility, market_return, color='red', marker='o', s=100, label='Market (SPY)')
+plt.scatter(optimal_portfolio[1], optimal_portfolio[0], color='green', marker='*', s=100, label='Optimal Portfolio')
+plt.scatter(high_risk_portfolio[1], high_risk_portfolio[0], color='blue', marker='*', s=100, label='High-Risk Portfolio')
+plt.scatter(low_risk_portfolio[1], low_risk_portfolio[0], color='purple', marker='*', s=100, label='Low-Risk Portfolio')
+plt.legend(loc="upper left")
+plt.show()
+
+# Statistics Page with Horizontal Layout
+fig, ax = plt.subplots(figsize=(12, 6))
+ax.axis('off')
+ax.set_title("Detailed Portfolio Statistics", fontsize=16)
+
+portfolio_stats = [
+    ("Market (SPY)", market_return, market_volatility, market_sharpe_ratio, [1/len(ASSETS)]*len(ASSETS), 'red'),
+    ("Optimal", optimal_portfolio['Return'], optimal_portfolio['Volatility'], optimal_portfolio['Sharpe Ratio'], optimal_weights, 'green'),
+    ("High-Risk", high_risk_portfolio['Return'], high_risk_portfolio['Volatility'], high_risk_portfolio['Sharpe Ratio'], high_risk_weights, 'blue'),
+    ("Low-Risk", low_risk_portfolio['Return'], low_risk_portfolio['Volatility'], low_risk_portfolio['Sharpe Ratio'], low_risk_weights, 'purple')
+]
+
+# Position portfolios in horizontal rows
+x_pos, y_pos = 0.1, 0.8
+row_max = 2
+
+for idx, (name, ret, vol, sharpe, weights, color) in enumerate(portfolio_stats):
+    text = (
+        f"{name} Portfolio\n"
+        f"Return: {ret * 100:.2f}%\n"
+        f"Volatility: {vol * 100:.2f}%\n"
+        f"Sharpe Ratio: {sharpe:.2f}\n"
+        "Weights:\n" + '\n'.join([f"{asset}: {weight * 100:.2f}%" for asset, weight in zip(ASSETS, weights)])
+    )
+    ax.text(x_pos, y_pos, text, fontsize=10, verticalalignment='top',
+            bbox=dict(boxstyle="round,pad=0.5", edgecolor=color, facecolor='white'))
+    x_pos += 0.5  # Move to the right for the next portfolio
+    if (idx + 1) % row_max == 0:  # Move to next row after reaching max per row
+        x_pos = 0.1
+        y_pos -= 0.4  # Shift down by a larger margin
+
+plt.show()
+

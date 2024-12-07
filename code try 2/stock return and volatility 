@@ -1,0 +1,170 @@
+# Import required libraries
+import math
+import matplotlib.pyplot as plt
+import numpy as np
+import pandas as pd
+import yfinance as yf
+
+#obtaining and printing data
+#we have used the ticker 'AC.TO', which is Air Canada
+
+data = yf.download('NVDA','2000-01-01','2024-01-01')
+data.head()
+
+#Next, we calculate the number of days that have elapsed in our chosen time window
+time_elapsed = (data.index[-1] - data.index[0]).days
+
+#Current price / first record (e.g. price at beginning of 2009)
+#provides us with the total growth %
+total_growth = (data['Adj Close'][-1] / data['Adj Close'][1])
+
+#Next, we want to annualize this percentage
+#First, we convert our time elapsed to the # of years elapsed
+number_of_years = time_elapsed / 365.0
+#Second, we can raise the total growth to the inverse of the # of years
+#(e.g. ~1/10 at time of writing) to annualize our growth rate
+cagr = total_growth ** (1/number_of_years) - 1
+
+#Now that we have the mean annual growth rate above,
+#we'll also need to calculate the standard deviation of the
+#daily price changes
+std_dev = data['Adj Close'].pct_change().std()
+
+#Next, because there are roughy ~252 trading days in a year,
+#we'll need to scale this by an annualization factor
+#reference: https://www.fool.com/knowledge-center/how-to-calculate-annualized-volatility.aspx
+
+number_of_trading_days = 252
+std_dev = std_dev * math.sqrt(number_of_trading_days)
+
+#From here, we have our two inputs needed to generate random
+#values in our simulation
+print ("cagr (mean returns) : ", str(round(cagr,4)))
+print ("std_dev (standard deviation of return : )", str(round(std_dev,4)))
+
+
+
+#Now that we've created a single random walk above,
+#we can simulate this process over a large sample size to
+#get a better sense of the true expected distribution
+number_of_trials = 3000
+
+#set up an additional array to collect all possible
+#closing prices in last day of window.
+#We can toss this into a histogram
+#to get a clearer sense of possible outcomes
+closing_prices = []
+
+for i in range(number_of_trials):
+    #calculate randomized return percentages following our normal distribution
+    #and using the mean / std dev we calculated above
+    daily_return_percentages = np.random.normal(cagr/number_of_trading_days, std_dev/math.sqrt(number_of_trading_days),number_of_trading_days)+1
+    price_series = [data['Adj Close'][-1]]
+
+    for j in daily_return_percentages:
+        #extrapolate price out for next year
+        price_series.append(price_series[-1] * j)
+
+    #append closing prices in last day of window for histogram
+    closing_prices.append(price_series[-1])
+
+    #plot all random walks
+    plt.plot(price_series)
+
+plt.show()
+
+#plot histogram
+plt.hist(closing_prices,bins=40)
+
+plt.show()
+
+#from here, we can check the mean of all ending prices
+#allowing us to arrive at the most probable ending point
+mean_end_price = round(np.mean(closing_prices),2)
+print("Expected price: ", str(mean_end_price))
+
+# Initialize an array to store the percentage growth over the simulation period
+percentage_growth = []
+
+for i in range(number_of_trials):
+    # Calculate randomized return percentages based on the normal distribution
+    daily_return_percentages = np.random.normal(cagr/number_of_trading_days, std_dev/math.sqrt(number_of_trading_days), number_of_trading_days) + 1
+    price_series = [data['Adj Close'][-1]]  # Start from the last known price
+
+    for j in daily_return_percentages:
+        # Extrapolate the price for the next year
+        price_series.append(price_series[-1] * j)
+
+    # Calculate percentage growth over the year ((final price - initial price) / initial price) * 100
+    growth = ((price_series[-1] - price_series[0]) / price_series[0]) * 100
+    percentage_growth.append(growth)  # Append the percentage growth
+
+    # Plot the random walk (optional)
+    plt.plot(price_series)
+
+plt.show()
+
+# Plot histogram of percentage growth
+plt.hist(percentage_growth, bins=40)
+plt.xlabel('Percentage Growth')
+plt.ylabel('Frequency')
+plt.title('Distribution of Percentage Growth Over One Year')
+plt.show()
+
+# Calculate the mean of all percentage growths to get the expected growth
+mean_growth = round(np.mean(percentage_growth), 2)
+print("Expected percentage growth: ", str(mean_growth), "%")
+
+      
+# Initialize arrays to store percentage growth and volatility
+percentage_growth = []
+annualized_volatility = []
+
+for i in range(number_of_trials):
+    # Calculate randomized return percentages based on the normal distribution
+    daily_return_percentages = np.random.normal(cagr / number_of_trading_days, std_dev / math.sqrt(number_of_trading_days), number_of_trading_days) + 1
+    daily_log_returns = []  # Initialize for log returns (to calculate volatility)
+
+    price_series = [data['Adj Close'][-1]]  # Start from the last known price
+    for j in daily_return_percentages:
+        # Extrapolate the price for the next year
+        price_series.append(price_series[-1] * j)
+        daily_log_returns.append(math.log(j))  # Log return for volatility
+
+    # Calculate percentage growth over the year
+    growth = ((price_series[-1] - price_series[0]) / price_series[0]) * 100
+    percentage_growth.append(growth)
+
+    # Calculate annualized volatility for this trial
+    # Standard deviation of daily log returns, scaled for annualization
+    trial_volatility = np.std(daily_log_returns) * math.sqrt(number_of_trading_days)
+    annualized_volatility.append(trial_volatility)
+
+    # Plot the random walk (optional)
+    plt.plot(price_series)
+
+plt.show()
+
+# Plot histogram of percentage growth
+plt.hist(percentage_growth, bins=40)
+plt.xlabel('Percentage Growth')
+plt.ylabel('Frequency')
+plt.title('Distribution of Percentage Growth Over One Year')
+plt.show()
+
+# Plot histogram of volatility
+plt.hist(annualized_volatility, bins=40)
+plt.xlabel('Annualized Volatility')
+plt.ylabel('Frequency')
+plt.title('Distribution of Annualized Volatility Over One Year')
+plt.show()
+
+# Calculate expected growth and volatility
+mean_growth = round(np.mean(percentage_growth), 2)
+mean_volatility = round(np.mean(annualized_volatility), 4)
+print("Expected percentage growth: ", str(mean_growth), "%")
+print("Expected volatility: ", str(mean_volatility))
+
+print("Expected volatility: ", str(mean_volatility * 100), "%")
+ 
+    
